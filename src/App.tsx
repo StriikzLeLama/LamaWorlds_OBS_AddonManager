@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { PathSelector } from './components/PathSelector'
 import { PluginList } from './components/PluginListEnhanced'
 import { ErrorBoundary } from './components/ErrorBoundary'
+import { logger } from './utils/logger'
 
 function App() {
     const [obsPath, setObsPath] = useState<string | null>(null);
@@ -18,7 +19,7 @@ function App() {
             const running = await window.electronAPI.isObsRunning();
             setObsRunning(running);
         } catch (error) {
-            console.error('Failed to check OBS status:', error);
+            logger.error('Failed to check OBS status', error);
         }
     };
 

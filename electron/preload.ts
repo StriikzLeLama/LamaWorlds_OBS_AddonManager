@@ -1,5 +1,17 @@
 import { contextBridge, ipcRenderer } from 'electron'
 
+// Type pour PluginInfo (doit correspondre à celui dans PluginManager)
+interface PluginInfo {
+    id: string;
+    name: string;
+    displayName: string;
+    version: string;
+    scope: 'system' | 'user';
+    dllPath: string;
+    dataPath?: string;
+    folderName: string;
+}
+
 contextBridge.exposeInMainWorld('electronAPI', {
     // OBS Path Management
     getObsPath: () => ipcRenderer.invoke('obs:get-path'),
@@ -22,7 +34,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
         ipcRenderer.invoke('plugins:update', pluginId, obsPath),
     downgradePlugin: (pluginId: string, releaseTag: string, obsPath: string) => 
         ipcRenderer.invoke('plugins:downgrade', pluginId, releaseTag, obsPath),
-    removePlugin: (pluginInfo: any, obsPath: string) => 
+    removePlugin: (pluginInfo: PluginInfo, obsPath: string) => 
         ipcRenderer.invoke('plugins:remove', pluginInfo, obsPath),
 
     // GitHub Releases

@@ -5,7 +5,7 @@
 import type { PluginInfo } from '../managers/PluginManager';
 
 export interface ElectronStore {
-    get: (key: string) => unknown;
+    get: <T = unknown>(key: string) => T;
     set: (key: string, value: unknown) => void;
     has: (key: string) => boolean;
     delete: (key: string) => void;

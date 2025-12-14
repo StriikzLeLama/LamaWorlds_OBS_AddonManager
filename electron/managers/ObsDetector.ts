@@ -2,6 +2,8 @@ import { exec } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import util from 'util';
+import { OBS_PATHS } from '../constants';
+import { logger } from '../utils/logger';
 
 const execAsync = util.promisify(exec);
 
@@ -13,28 +15,28 @@ export class ObsDetector {
      * 2. Default installation paths
      */
     async detect(): Promise<string | null> {
-        console.log('Starting OBS detection...');
+        logger.info('Starting OBS detection...');
 
         // 1. Registry Check
         const registryPath = await this.checkRegistry();
         if (registryPath) {
-            console.log(`Registry detection found path: ${registryPath}`);
+            logger.info(`Registry detection found path: ${registryPath}`);
             if (this.isValid(registryPath)) {
                 return registryPath;
             } else {
-                console.log('Registry path invalid.');
+                logger.debug('Registry path invalid.');
             }
         }
 
         // 2. Default Paths Check
         const defaultPaths = [
-            'C:\\Program Files\\obs-studio',
-            'C:\\Program Files (x86)\\obs-studio'
+            OBS_PATHS.DEFAULT_X64,
+            OBS_PATHS.DEFAULT_X86
         ];
 
         for (const p of defaultPaths) {
             if (this.isValid(p)) {
-                console.log(`Default path found: ${p}`);
+                logger.info(`Default path found: ${p}`);
                 return p;
             }
         }
@@ -46,10 +48,7 @@ export class ObsDetector {
      * Queries Windows Registry for OBS Studio path.
      */
     private async checkRegistry(): Promise<string | null> {
-        const keys = [
-            'HKLM\\SOFTWARE\\OBS Studio',
-            'HKLM\\SOFTWARE\\WOW6432Node\\OBS Studio'
-        ];
+        const keys = OBS_PATHS.REGISTRY_KEYS;
 
         for (const key of keys) {
             try {

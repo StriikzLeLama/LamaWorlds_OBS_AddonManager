@@ -2,9 +2,11 @@ import axios, { AxiosError, AxiosRequestConfig } from 'axios';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
+import { APP_CONFIG } from '../constants';
+import { logger } from '../utils/logger';
 
 interface CacheEntry {
-    data: any;
+    data: unknown;
     timestamp: number;
     expiresAt: number;
 }
@@ -12,8 +14,8 @@ interface CacheEntry {
 interface QueuedRequest {
     id: string;
     config: AxiosRequestConfig;
-    resolve: (value: any) => void;
-    reject: (error: any) => void;
+    resolve: (value: unknown) => void;
+    reject: (error: unknown) => void;
     retries: number;
 }
 
@@ -21,11 +23,11 @@ export class RequestManager {
     private cache: Map<string, CacheEntry> = new Map();
     private queue: QueuedRequest[] = [];
     private activeRequests: number = 0;
-    private readonly maxConcurrent: number = 2; // Limiter à 2 requêtes simultanées
+    private readonly maxConcurrent: number = APP_CONFIG.MAX_CONCURRENT_REQUESTS;
     private readonly cacheDir: string;
-    private readonly cacheTTL: number = 5 * 60 * 1000; // 5 minutes
-    private readonly maxRetries: number = 3;
-    private readonly retryDelay: number = 1000; // 1 seconde de base
+    private readonly cacheTTL: number = APP_CONFIG.CACHE_TTL;
+    private readonly maxRetries: number = APP_CONFIG.MAX_RETRIES;
+    private readonly retryDelay: number = APP_CONFIG.RETRY_DELAY;
 
     constructor() {
         // Cache persistant dans le dossier utilisateur
@@ -55,7 +57,7 @@ export class RequestManager {
                 }
             }
         } catch (error) {
-            console.error('Failed to load cache:', error);
+            logger.error('Failed to load cache', error);
         }
     }
 
@@ -71,7 +73,7 @@ export class RequestManager {
             });
             fs.writeFileSync(cacheFile, JSON.stringify(entries, null, 2));
         } catch (error) {
-            console.error('Failed to save cache:', error);
+            logger.error('Failed to save cache', error);
         }
     }
 
@@ -85,7 +87,7 @@ export class RequestManager {
     /**
      * Vérifie si une requête est en cache et valide
      */
-    private getCached(url: string, config?: AxiosRequestConfig): any | null {
+    private getCached(url: string, config?: AxiosRequestConfig): unknown | null {
         const key = this.getCacheKey(url, config);
         const entry = this.cache.get(key);
         
@@ -103,7 +105,7 @@ export class RequestManager {
     /**
      * Met en cache une réponse
      */
-    private setCache(url: string, data: any, config?: AxiosRequestConfig) {
+    private setCache(url: string, data: unknown, config?: AxiosRequestConfig) {
         const key = this.getCacheKey(url, config);
         const now = Date.now();
         this.cache.set(key, {
@@ -133,7 +135,7 @@ export class RequestManager {
 
             if (isNetworkError && retries < this.maxRetries) {
                 const delay = this.retryDelay * Math.pow(2, retries);
-                console.log(`Retrying request after ${delay}ms (attempt ${retries + 1}/${this.maxRetries})`);
+                logger.debug(`Retrying request after ${delay}ms (attempt ${retries + 1}/${this.maxRetries})`);
                 await this.sleep(delay);
                 return this.retryRequest(requestFn, retries + 1);
             }
@@ -164,14 +166,14 @@ export class RequestManager {
         try {
             // Délai entre les requêtes pour éviter la saturation
             if (this.activeRequests > 1) {
-                await this.sleep(500); // 500ms entre chaque requête
+                await this.sleep(APP_CONFIG.REQUEST_DELAY);
             }
 
             const result = await this.retryRequest(() => 
                 axios.request(request.config)
             );
 
-            request.resolve(result.data);
+            request.resolve(result.data as unknown);
         } catch (error) {
             request.reject(error);
         } finally {
@@ -190,7 +192,7 @@ export class RequestManager {
         // Vérifier le cache
         const cached = this.getCached(url, config);
         if (cached) {
-            return cached;
+            return cached as T;
         }
 
         // Si on peut faire la requête immédiatement
@@ -199,7 +201,7 @@ export class RequestManager {
                 this.activeRequests++;
                 
                 // Délai entre les requêtes
-                const delay = this.activeRequests > 1 ? 500 : 0;
+                const delay = this.activeRequests > 1 ? APP_CONFIG.REQUEST_DELAY : 0;
                 
                 setTimeout(async () => {
                     try {
@@ -210,7 +212,7 @@ export class RequestManager {
                         // Mettre en cache
                         this.setCache(url, result.data, config);
                         
-                        resolve(result.data);
+                        resolve(result.data as T);
                     } catch (error) {
                         reject(error);
                     } finally {
@@ -227,7 +229,7 @@ export class RequestManager {
             this.queue.push({
                 id: requestId,
                 config,
-                resolve,
+                resolve: resolve as (value: unknown) => void,
                 reject,
                 retries: 0
             });
@@ -271,7 +273,7 @@ export class RequestManager {
                 fs.unlinkSync(cacheFile);
             }
         } catch (error) {
-            console.error('Failed to clear cache file:', error);
+            logger.error('Failed to clear cache file', error);
         }
     }
 }

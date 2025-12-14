@@ -1,5 +1,6 @@
 import { exec } from 'child_process';
 import util from 'util';
+import { logger } from '../utils/logger';
 
 const execAsync = util.promisify(exec);
 
@@ -35,7 +36,7 @@ export class ObsRunningDetector {
             return false;
         } catch (error) {
             // If command fails, assume not running to be safe
-            console.error('Error checking if OBS is running:', error);
+            logger.error('Error checking if OBS is running', error);
             return false;
         }
     }

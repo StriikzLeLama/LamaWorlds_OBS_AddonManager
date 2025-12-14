@@ -2,15 +2,15 @@ import { app, BrowserWindow, ipcMain, dialog } from 'electron'
 import path from 'path'
 import { ObsDetector } from './managers/ObsDetector'
 import { ObsRunningDetector } from './managers/ObsRunningDetector'
-import { PluginManager } from './managers/PluginManager'
+import { PluginManager, type PluginInfo } from './managers/PluginManager'
 import { PluginInstaller } from './managers/PluginInstaller'
 import { BackupManager } from './managers/BackupManager'
 import { PluginCatalog, CatalogPlugin } from './managers/PluginCatalog'
 import { logger } from './utils/logger'
-import type { ElectronStore, PluginOperationError } from './types'
+import type { PluginOperationError } from './types'
 
 // Store reference
-let store: ElectronStore | null = null;
+let store: any = null;
 
 // Initialize Store (Dynamic import for ESM compatibility)
 async function initStore() {
@@ -125,7 +125,7 @@ function setupIpcHandlers() {
     // OBS Path Management
     ipcMain.handle('obs:get-path', async () => {
         if (store && store.has('obsPath')) {
-            const storedPath = store.get('obsPath');
+            const storedPath = store.get('obsPath') as string;
             const normalizedPath = obsDetector.normalizePath(storedPath);
             if (obsDetector.isValid(normalizedPath)) {
                 return normalizedPath;
@@ -346,18 +346,22 @@ function setupIpcHandlers() {
                 name: release.name,
                 publishedAt: release.published_at
             }));
-        } catch (error: any) {
+        } catch (error: unknown) {
+            const pluginError = error as PluginOperationError;
+            logger.error('Failed to fetch all releases', error);
+            
             // Améliorer les messages d'erreur réseau
-            if (error.code === 'ENOBUFS' || error.code === 'ECONNRESET' || error.code === 'ETIMEDOUT') {
+            if (pluginError.code === 'ENOBUFS' || pluginError.code === 'ECONNRESET' || pluginError.code === 'ETIMEDOUT') {
                 throw new Error(`Network error: Unable to connect to GitHub. Please check your internet connection and try again.`);
             }
-            if (error.response?.status === 404) {
+            if (pluginError.response?.status === 404) {
                 throw new Error(`Plugin repository not found or has no releases.`);
             }
-            if (error.response?.status === 403) {
+            if (pluginError.response?.status === 403) {
                 throw new Error(`GitHub API rate limit exceeded. Please wait a few minutes and try again.`);
             }
-            throw new Error(`Failed to fetch releases: ${error.message || 'Unknown error'}`);
+            const errorMessage = pluginError instanceof Error ? pluginError.message : 'Unknown error';
+            throw new Error(`Failed to fetch releases: ${errorMessage}`);
         }
     });
 }

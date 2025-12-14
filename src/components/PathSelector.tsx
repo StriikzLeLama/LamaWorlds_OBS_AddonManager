@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { logger } from '../utils/logger';
 
 interface PathSelectorProps {
     onPathChange: (path: string | null) => void;
@@ -27,8 +28,8 @@ export const PathSelector: React.FC<PathSelectorProps> = ({ onPathChange, obsRun
         try {
             const path = await window.electronAPI.getObsPath();
             updatePath(path);
-        } catch (err: any) {
-            console.error(err);
+        } catch (err: unknown) {
+            logger.error('Failed to check OBS path', err);
             setError('Failed to check OBS path');
         } finally {
             setLoading(false);
@@ -45,8 +46,8 @@ export const PathSelector: React.FC<PathSelectorProps> = ({ onPathChange, obsRun
             if (!path) {
                 setError('OBS Studio not found. Please select manually.');
             }
-        } catch (err: any) {
-            console.error(err);
+        } catch (err: unknown) {
+            logger.error('Failed to detect OBS installation', err);
             setError('Failed to detect OBS installation');
         } finally {
             setDetecting(false);
@@ -63,8 +64,8 @@ export const PathSelector: React.FC<PathSelectorProps> = ({ onPathChange, obsRun
             } else if (path === null) {
                 setError('Invalid OBS Studio folder. Please select the obs-studio installation folder.');
             }
-        } catch (err: any) {
-            console.error(err);
+        } catch (err: unknown) {
+            logger.error('Failed to select path', err);
             setError('Failed to select path');
         } finally {
             setLoading(false);

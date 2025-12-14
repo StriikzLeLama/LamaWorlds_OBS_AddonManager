@@ -1,6 +1,8 @@
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
+import { PLUGIN_PATHS } from '../constants';
+import { logger } from '../utils/logger';
 
 export interface PluginInfo {
     id: string;
@@ -23,14 +25,14 @@ export class PluginManager {
         const plugins: PluginInfo[] = [];
 
         // Scan system plugins
-        const systemPluginsPath = path.join(obsPath, 'obs-plugins');
+        const systemPluginsPath = path.join(obsPath, PLUGIN_PATHS.SYSTEM_PLUGINS);
         if (fs.existsSync(systemPluginsPath)) {
             const systemPlugins = await this.scanPluginDirectory(systemPluginsPath, 'system');
             plugins.push(...systemPlugins);
         }
 
         // Scan user plugins
-        const userPluginsPath = path.join(os.homedir(), 'AppData', 'Roaming', 'obs-studio', 'plugins');
+        const userPluginsPath = path.join(os.homedir(), PLUGIN_PATHS.USER_PLUGINS);
         if (fs.existsSync(userPluginsPath)) {
             const userPlugins = await this.scanPluginDirectory(userPluginsPath, 'user');
             plugins.push(...userPlugins);
@@ -82,7 +84,7 @@ export class PluginManager {
                 }
             }
         } catch (error) {
-            console.error(`Failed to scan ${scope} plugins:`, error);
+            logger.error(`Failed to scan ${scope} plugins`, error);
         }
 
         return plugins;

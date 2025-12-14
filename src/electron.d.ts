@@ -1,30 +1,11 @@
-export interface ElectronAPI {
-    // OBS Path Management
-    getObsPath: () => Promise<string | null>;
-    selectObsManual: () => Promise<string | null | undefined>;
-    validateObsPath: (path: string) => Promise<boolean>;
-    resetObsPath: () => Promise<void>;
-    isObsRunning: () => Promise<boolean>;
+export interface PluginOperationResult {
+    success: boolean;
+    backupPath: string;
+}
 
-    // Plugin Management
-    scanPlugins: (obsPath: string) => Promise<PluginInfo[]>;
-    
-    // Plugin Catalog
-    getCatalogPlugins: () => Promise<CatalogPlugin[]>;
-    findCatalogPlugin: (id: string) => Promise<CatalogPlugin | undefined>;
-
-    // Plugin Operations
-    installPlugin: (pluginId: string, obsPath: string, releaseTag?: string) => Promise<{ success: boolean; backupPath: string }>;
-    updatePlugin: (pluginId: string, obsPath: string) => Promise<{ success: boolean; backupPath: string }>;
-    downgradePlugin: (pluginId: string, releaseTag: string, obsPath: string) => Promise<{ success: boolean; backupPath: string }>;
-    removePlugin: (pluginInfo: PluginInfo, obsPath: string) => Promise<{ success: boolean; backupPath: string }>;
-
-    // GitHub Releases
-    getLatestRelease: (pluginId: string) => Promise<{
-        release: { tag: string; name: string; publishedAt: string };
-        asset: { name: string; size: number } | null;
-    }>;
-    getAllReleases: (pluginId: string) => Promise<Array<{ tag: string; name: string; publishedAt: string }>>;
+export interface ReleaseInfo {
+    release: { tag: string; name: string; publishedAt: string };
+    asset: { name: string; size: number } | null;
 }
 
 export interface PluginInfo {
@@ -47,9 +28,34 @@ export interface CatalogPlugin {
     windowsAssetPattern?: string;
 }
 
+export interface ElectronAPI {
+    // OBS Path Management
+    getObsPath: () => Promise<string | null>;
+    selectObsManual: () => Promise<string | null | undefined>;
+    validateObsPath: (path: string) => Promise<boolean>;
+    resetObsPath: () => Promise<void>;
+    isObsRunning: () => Promise<boolean>;
+
+    // Plugin Management
+    scanPlugins: (obsPath: string) => Promise<PluginInfo[]>;
+    
+    // Plugin Catalog
+    getCatalogPlugins: () => Promise<CatalogPlugin[]>;
+    findCatalogPlugin: (id: string) => Promise<CatalogPlugin | undefined>;
+
+    // Plugin Operations
+    installPlugin: (pluginId: string, obsPath: string, releaseTag?: string) => Promise<PluginOperationResult>;
+    updatePlugin: (pluginId: string, obsPath: string) => Promise<PluginOperationResult>;
+    downgradePlugin: (pluginId: string, releaseTag: string, obsPath: string) => Promise<PluginOperationResult>;
+    removePlugin: (pluginInfo: PluginInfo, obsPath: string) => Promise<PluginOperationResult>;
+
+    // GitHub Releases
+    getLatestRelease: (pluginId: string) => Promise<ReleaseInfo>;
+    getAllReleases: (pluginId: string) => Promise<Array<{ tag: string; name: string; publishedAt: string }>>;
+}
+
 declare global {
     interface Window {
         electronAPI: ElectronAPI;
     }
 }
-

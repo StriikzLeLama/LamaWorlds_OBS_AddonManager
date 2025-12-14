@@ -3,6 +3,8 @@ import path from 'path';
 import { exec } from 'child_process';
 import util from 'util';
 import os from 'os';
+import { BACKUP_CONFIG } from '../constants';
+import { logger } from '../utils/logger';
 
 const execAsync = util.promisify(exec);
 
@@ -11,7 +13,7 @@ export class BackupManager {
 
     constructor() {
         // Store backups in user home directory
-        this.backupDir = path.join(os.homedir(), 'LamaWorlds_OBS_Backups');
+        this.backupDir = path.join(os.homedir(), BACKUP_CONFIG.DIR_NAME);
         this.ensureBackupDir();
     }
 
@@ -62,7 +64,7 @@ export class BackupManager {
             // Cleanup temp directory
             await this.deleteDirectory(tempDir);
 
-            console.log(`Backup created: ${backupPath}`);
+            logger.info(`Backup created: ${backupPath}`);
             return backupPath;
         } catch (error) {
             // Cleanup on error

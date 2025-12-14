@@ -5,6 +5,8 @@ import * as yauzl from 'yauzl';
 import os from 'os';
 import { CatalogPlugin } from './PluginCatalog';
 import { RequestManager } from './RequestManager';
+import { APP_CONFIG } from '../constants';
+import { logger } from '../utils/logger';
 
 export interface GitHubRelease {
     tag_name: string;
@@ -36,7 +38,7 @@ export class PluginInstaller {
                 'Accept': 'application/vnd.github.v3+json',
                 'User-Agent': 'LamaWorlds-OBS-AddonManager'
             },
-            timeout: 10000 // 10 secondes timeout
+            timeout: APP_CONFIG.GITHUB_API_TIMEOUT
         });
     }
 
