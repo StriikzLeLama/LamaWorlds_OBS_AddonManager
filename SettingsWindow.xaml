@@ -1,0 +1,153 @@
+<Window x:Class="LamaWorlds_OBS_AddonManager.SettingsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Paramètres" 
+        Height="450" Width="600"
+        WindowStartupLocation="CenterOwner"
+        Background="{StaticResource BackgroundColor}"
+        ResizeMode="NoResize">
+    <Grid Margin="20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- En-tête -->
+        <TextBlock Grid.Row="0" 
+                   Text="Paramètres" 
+                   FontSize="24" 
+                   FontWeight="Bold"
+                   Margin="0,0,0,20"/>
+
+        <!-- Contenu -->
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+            <StackPanel>
+                <!-- Section Chemins OBS -->
+                <Border Style="{StaticResource CardStyle}" Margin="0,0,0,15">
+                    <StackPanel>
+                        <TextBlock Text="Chemins OBS Studio" 
+                                   FontSize="16" 
+                                   FontWeight="Bold"
+                                   Margin="0,0,0,15"/>
+
+                        <TextBlock Text="Chemin d'installation OBS (optionnel)" 
+                                   FontSize="12"
+                                   FontWeight="SemiBold"
+                                   Margin="0,0,0,5"/>
+                        <TextBlock Text="Laissez vide pour utiliser le chemin par défaut" 
+                                   FontSize="11"
+                                   Foreground="#666"
+                                   Margin="0,0,0,10"/>
+
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+
+                            <TextBox x:Name="OBSPathTextBox" 
+                                     Grid.Column="0"
+                                     Padding="8"
+                                     Margin="0,0,10,0"
+                                     TextChanged="OBSPathTextBox_TextChanged"/>
+                            
+                            <Button Grid.Column="1"
+                                    Content="Parcourir..."
+                                    Style="{StaticResource SecondaryButton}"
+                                    Click="BrowseOBSPath_Click"
+                                    Padding="12,8"/>
+                        </Grid>
+
+                        <TextBlock x:Name="OBSPathStatus" 
+                                   FontSize="11"
+                                   Margin="0,5,0,0"
+                                   TextWrapping="Wrap"/>
+
+                        <Separator Margin="0,15"/>
+
+                        <TextBlock Text="Chemin des plugins utilisateur (optionnel)" 
+                                   FontSize="12"
+                                   FontWeight="SemiBold"
+                                   Margin="0,0,0,5"/>
+                        <TextBlock Text="Laissez vide pour utiliser le chemin par défaut: %APPDATA%\obs-studio\plugins" 
+                                   FontSize="11"
+                                   Foreground="#666"
+                                   Margin="0,0,0,10"/>
+
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+
+                            <TextBox x:Name="OBSUserPluginsPathTextBox" 
+                                     Grid.Column="0"
+                                     Padding="8"
+                                     Margin="0,0,10,0"
+                                     TextChanged="OBSUserPluginsPathTextBox_TextChanged"/>
+                            
+                            <Button Grid.Column="1"
+                                    Content="Parcourir..."
+                                    Style="{StaticResource SecondaryButton}"
+                                    Click="BrowseOBSUserPluginsPath_Click"
+                                    Padding="12,8"/>
+                        </Grid>
+
+                        <TextBlock x:Name="OBSUserPluginsPathStatus" 
+                                   FontSize="11"
+                                   Margin="0,5,0,0"
+                                   TextWrapping="Wrap"/>
+                    </StackPanel>
+                </Border>
+
+                <!-- Section Informations -->
+                <Border Style="{StaticResource CardStyle}">
+                    <StackPanel>
+                        <TextBlock Text="Chemins par défaut" 
+                                   FontSize="16" 
+                                   FontWeight="Bold"
+                                   Margin="0,0,0,15"/>
+
+                        <TextBlock Text="Chemin système (plugins installés globalement):" 
+                                   FontSize="12"
+                                   FontWeight="SemiBold"
+                                   Margin="0,0,0,5"/>
+                        <TextBlock x:Name="DefaultSystemPathText" 
+                                   FontSize="11"
+                                   Foreground="#666"
+                                   TextWrapping="Wrap"
+                                   Margin="0,0,0,15"/>
+
+                        <TextBlock Text="Chemin utilisateur (plugins installés pour votre compte):" 
+                                   FontSize="12"
+                                   FontWeight="SemiBold"
+                                   Margin="0,0,0,5"/>
+                        <TextBlock x:Name="DefaultUserPathText" 
+                                   FontSize="11"
+                                   Foreground="#666"
+                                   TextWrapping="Wrap"/>
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+        </ScrollViewer>
+
+        <!-- Boutons -->
+        <Border Grid.Row="2" 
+                BorderBrush="{StaticResource BorderColor}"
+                BorderThickness="0,1,0,0"
+                Padding="0,15,0,0"
+                Margin="0,15,0,0">
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                <Button Content="Réinitialiser" 
+                        Style="{StaticResource SecondaryButton}"
+                        Click="ResetButton_Click"
+                        Margin="0,0,10,0"/>
+                <Button Content="Enregistrer" 
+                        Style="{StaticResource PrimaryButton}"
+                        Click="SaveButton_Click"
+                        Width="100"/>
+            </StackPanel>
+        </Border>
+    </Grid>
+</Window>

@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <!-- ApplicationIcon requires .ico format, not .png. Uncomment when you have a .ico file:
+    <ApplicationIcon>assets\Logo\logo.ico</ApplicationIcon>
+    -->
+    <AssemblyName>LamaWorlds_OBS_AddonManager</AssemblyName>
+    <RootNamespace>LamaWorlds_OBS_AddonManager</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+    <PackageReference Include="System.IO.Compression" Version="4.3.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Resource Include="assets\**\*" />
+  </ItemGroup>
+
+</Project>
