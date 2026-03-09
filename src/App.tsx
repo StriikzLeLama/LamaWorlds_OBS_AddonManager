@@ -9,7 +9,7 @@ import { listen } from "@tauri-apps/api/event";
 import { invoke, openFolderDialog } from "./tauriApi";
 import { ask, save, open } from "@tauri-apps/plugin-dialog";
 import logo from "./image/logo_64x64.png";
-import { t } from "./i18n";
+import { t, getLang, setLang, type Lang } from "./i18n";
 import "./App.css";
 
 interface ObsPluginInfo {
@@ -72,15 +72,18 @@ interface ActionLog {
   id: string;
   action: string;
   plugin?: string;
+  details?: string;
   time: string;
+  date: string;
 }
 
-type Page = "home" | "options" | "discover";
+type Page = "home" | "options" | "discover" | "logs";
 type SortBy = "name" | "path" | "date";
 type StatusFilter = "all" | "active" | "disabled";
+type ViewMode = "list" | "grid";
 
 const OBS_FORUM_PLUGINS_URL = "https://obsproject.com/forum/plugins/";
-const MAX_ACTION_LOG = 20;
+const MAX_ACTION_LOG = 100;
 
 /** Formats a Unix timestamp (seconds) as locale date string. */
 function formatDate(ts: number | null | undefined): string {
@@ -104,24 +107,30 @@ function HomePage({
   searchQuery,
   sortBy,
   statusFilter,
+  viewMode,
   searchInputRef,
   onSearchChange,
   onSortChange,
   onStatusFilterChange,
+  onViewModeChange,
   onRefresh,
   onOpenPluginsFolder,
   onExportPluginsJson,
   onExportPluginsCsv,
+  onInstallFromUrl,
+  onImportFromFile,
   onUninstall,
   onDisable,
   onEnable,
+  onOpenPluginUrl,
+  onOpenPluginFolder,
   obsRunning,
   pathValid,
   readOnly,
   compactMode,
   onCompactModeChange,
-  actionLog,
   toast,
+  pluginUpdates,
 }: {
   plugins: ObsPluginInfo[];
   paths: ObsPaths | null;
@@ -129,25 +138,45 @@ function HomePage({
   searchQuery: string;
   sortBy: SortBy;
   statusFilter: StatusFilter;
+  viewMode: ViewMode;
   searchInputRef: React.RefObject<HTMLInputElement | null>;
   onSearchChange: (v: string) => void;
   onSortChange: (v: SortBy) => void;
   onStatusFilterChange: (v: StatusFilter) => void;
+  onViewModeChange: (v: ViewMode) => void;
   onRefresh: () => void;
   onOpenPluginsFolder: () => void;
   onExportPluginsJson: () => void;
   onExportPluginsCsv: () => void;
+  onInstallFromUrl: (url: string) => void;
+  onImportFromFile: () => void;
   onUninstall: (plugin: ObsPluginInfo) => void;
   onDisable: (plugin: ObsPluginInfo) => void;
   onEnable: (plugin: ObsPluginInfo) => void;
+  onOpenPluginUrl?: (url: string) => void;
+  onOpenPluginFolder?: (path: string) => void;
   obsRunning: boolean;
   pathValid: boolean;
   readOnly: boolean;
   compactMode: boolean;
   onCompactModeChange: (v: boolean) => void;
-  actionLog: ActionLog[];
   toast: string | null;
+  pluginUpdates?: PluginUpdateInfo[];
 }) {
+  const [installUrl, setInstallUrl] = useState("");
+  const [installLoading, setInstallLoading] = useState(false);
+
+  const handleInstallFromUrl = useCallback(async () => {
+    if (!installUrl.trim()) return;
+    setInstallLoading(true);
+    try {
+      await onInstallFromUrl(installUrl.trim());
+      setInstallUrl("");
+    } finally {
+      setInstallLoading(false);
+    }
+  }, [installUrl, onInstallFromUrl]);
+
   const hasPaths =
     paths &&
     (paths.custom_plugins_path ||
@@ -182,6 +211,48 @@ function HomePage({
   return (
     <>
       {toast && <div className="toast">{toast}</div>}
+      <section className="card home-import-card home-import-top">
+        <h2>{t.installFromUrl}</h2>
+        <p className="card-desc">{t.installFromUrlDesc}</p>
+        <div className="install-url-row">
+          <input
+            type="url"
+            placeholder="https://.../plugin.zip"
+            value={installUrl}
+            onChange={(e) => setInstallUrl(e.target.value)}
+            className="input input-sm"
+            aria-label="Plugin ZIP or DLL URL"
+          />
+          <button
+            type="button"
+            className="btn btn-primary btn-sm"
+            onClick={handleInstallFromUrl}
+            disabled={!installUrl.trim() || installLoading || readOnly}
+          >
+            {installLoading ? t.installing : t.install}
+          </button>
+        </div>
+        <div className="install-import-row">
+          <button
+            type="button"
+            className="btn btn-outline"
+            onClick={onImportFromFile}
+            disabled={readOnly}
+            title={t.importFromFileDesc}
+          >
+            {t.importFromFile}
+          </button>
+        </div>
+        <div
+          className={`drop-zone ${readOnly ? "drop-zone-disabled" : ""}`}
+          onDragOver={(e) => { e.preventDefault(); e.currentTarget.classList.add("drop-zone-active"); }}
+          onDragLeave={(e) => { e.preventDefault(); e.currentTarget.classList.remove("drop-zone-active"); }}
+          title={t.dropZoneHint}
+        >
+          <span className="drop-zone-icon">📦</span>
+          <span>{t.dropZoneHint}</span>
+        </div>
+      </section>
       {(obsRunning || !pathValid) && (
         <div className="alerts">
           {obsRunning && (
@@ -277,6 +348,10 @@ function HomePage({
             <button type="button" className="btn btn-ghost btn-sm" onClick={onExportPluginsCsv} title="Export list as CSV">
               {t.exportCsv}
             </button>
+            <div className="view-mode-toggle" role="group" aria-label="View mode">
+              <button type="button" className={`btn btn-ghost btn-sm ${viewMode === "list" ? "active" : ""}`} onClick={() => onViewModeChange("list")} title={t.listView}>{t.listView}</button>
+              <button type="button" className={`btn btn-ghost btn-sm ${viewMode === "grid" ? "active" : ""}`} onClick={() => onViewModeChange("grid")} title={t.gridView}>{t.gridView}</button>
+            </div>
             <label className="compact-toggle" title="Denser list" aria-label="Use compact plugin list">
               <input type="checkbox" checked={compactMode} onChange={(e) => onCompactModeChange(e.target.checked)} />
               <span>{t.compact}</span>
@@ -289,11 +364,37 @@ function HomePage({
             <span>{t.loading}</span>
           </div>
         ) : filteredPlugins.length > 0 ? (
-          <ul className={`plugin-list ${compactMode ? "compact" : ""}`}>
-            {filteredPlugins.map((plugin) => (
+          <ul className={`plugin-list ${compactMode ? "compact" : ""} view-${viewMode}`}>
+            {filteredPlugins.map((plugin) => {
+              const updateInfo = pluginUpdates?.find((u) => u.plugin_name === plugin.name);
+              return (
               <li
                 key={`${plugin.name}-${plugin.path}`}
-                className={`plugin-item ${!plugin.enabled ? "disabled" : ""}`}
+                className={`plugin-item ${!plugin.enabled ? "disabled" : ""} ${updateInfo ? "has-update" : ""}`}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  const menu = document.createElement("div");
+                  menu.className = "context-menu";
+                  menu.style.cssText = `left:${e.clientX}px;top:${e.clientY}px`;
+                  const items: { label: string; onClick: () => void }[] = [];
+                  if (updateInfo && onOpenPluginUrl) items.push({ label: t.viewOnForum, onClick: () => onOpenPluginUrl(updateInfo.forum_url) });
+                  if (onOpenPluginFolder) items.push({ label: t.openInFolder, onClick: () => onOpenPluginFolder(plugin.path) });
+                  if (!readOnly) {
+                    if (plugin.enabled) items.push({ label: t.disable, onClick: () => onDisable(plugin) });
+                    else items.push({ label: t.enable, onClick: () => onEnable(plugin) });
+                    items.push({ label: t.uninstall, onClick: () => onUninstall(plugin) });
+                  }
+                  items.forEach(({ label, onClick }) => {
+                    const btn = document.createElement("button");
+                    btn.type = "button";
+                    btn.textContent = label;
+                    btn.onclick = () => { onClick(); menu.remove(); };
+                    menu.appendChild(btn);
+                  });
+                  const close = () => { menu.remove(); document.removeEventListener("click", close); };
+                  document.body.appendChild(menu);
+                  requestAnimationFrame(() => document.addEventListener("click", close));
+                }}
               >
                 <div className="plugin-main">
                   <span className="plugin-name">
@@ -301,6 +402,7 @@ function HomePage({
                     {plugin.version && (
                       <span className="plugin-version"> v{plugin.version}</span>
                     )}
+                    {updateInfo && <span className="badge badge-update" title={t.updatesAvailable}>↑</span>}
                     {!plugin.enabled && (
                       <span className="badge badge-muted">{t.disabled}</span>
                     )}
@@ -345,7 +447,8 @@ function HomePage({
                   </button>
                 </div>
               </li>
-            ))}
+            );
+            })}
           </ul>
         ) : (
           <p className="empty-hint">
@@ -353,23 +456,6 @@ function HomePage({
               ? t.noPluginMatch
               : t.noPlugin}
           </p>
-        )}
-      </section>
-
-      <section className="card actions-card">
-        <h2>{t.actionHistory}</h2>
-        {actionLog.length > 0 ? (
-          <ul className="action-list">
-            {actionLog.map((a) => (
-              <li key={a.id} className="action-item">
-                <span className="action-text">{a.action}</span>
-                {a.plugin && <span className="action-plugin">{a.plugin}</span>}
-                <span className="action-time">{a.time}</span>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="empty-hint">{t.noRecentAction}</p>
         )}
       </section>
     </>
@@ -408,8 +494,6 @@ function DiscoverPage({
   readOnly: boolean;
   toast: string | null;
 }) {
-  const [installUrl, setInstallUrl] = useState("");
-  const [installLoading, setInstallLoading] = useState(false);
   const [forumPlugins, setForumPlugins] = useState<ForumPlugin[]>([]);
   const [forumLoading, setForumLoading] = useState(false);
   const [forumError, setForumError] = useState<string | null>(null);
@@ -420,6 +504,7 @@ function DiscoverPage({
   const [searchResults, setSearchResults] = useState<ForumPlugin[] | null>(null);
   const [searchLoading, setSearchLoading] = useState(false);
   const [showFavoritesOnly, setShowFavoritesOnly] = useState(false);
+  const [showNotInstalledOnly, setShowNotInstalledOnly] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [downloadModal, setDownloadModal] = useState<{
     plugin: ForumPlugin;
@@ -525,23 +610,29 @@ function DiscoverPage({
     return list;
   }, [baseList, forumSearch, forumSort, showFavoritesOnly, favorites, searchResults]);
 
-  const totalPages = Math.max(1, Math.ceil(filteredForumPlugins.length / PLUGINS_PER_PAGE));
-  const paginatedPlugins = useMemo(() => {
-    const start = (currentPage - 1) * PLUGINS_PER_PAGE;
-    return filteredForumPlugins.slice(start, start + PLUGINS_PER_PAGE);
-  }, [filteredForumPlugins, currentPage]);
-
   const topResources = filteredForumPlugins.slice(0, 5);
 
   const isInstalled = useCallback(
     (title: string) => {
-      const t = title.toLowerCase();
+      const lower = title.toLowerCase();
       return installedPluginNames.some(
-        (n) => n.toLowerCase() === t || t.includes(n.toLowerCase()) || n.toLowerCase().includes(t)
+        (n) => n.toLowerCase() === lower || lower.includes(n.toLowerCase()) || n.toLowerCase().includes(lower)
       );
     },
     [installedPluginNames]
   );
+
+  const filteredForumPluginsWithNotInstalled = useMemo(() => {
+    if (!showNotInstalledOnly) return filteredForumPlugins;
+    return filteredForumPlugins.filter((p) => !isInstalled(p.title));
+  }, [filteredForumPlugins, showNotInstalledOnly, isInstalled]);
+
+  const effectiveFilteredPlugins = filteredForumPluginsWithNotInstalled;
+  const totalPagesEffective = Math.max(1, Math.ceil(effectiveFilteredPlugins.length / PLUGINS_PER_PAGE));
+  const paginatedPluginsEffective = useMemo(() => {
+    const start = (currentPage - 1) * PLUGINS_PER_PAGE;
+    return effectiveFilteredPlugins.slice(start, start + PLUGINS_PER_PAGE);
+  }, [effectiveFilteredPlugins, currentPage]);
 
   return (
     <section className="discover-page">
@@ -648,27 +739,6 @@ function DiscoverPage({
             </button>
           </div>
         </div>
-        <div className="install-url-row">
-          <input
-            type="url"
-            placeholder="https://.../plugin.zip"
-            value={installUrl}
-            onChange={(e) => setInstallUrl(e.target.value)}
-            className="input input-sm"
-            aria-label="Plugin ZIP or DLL URL to install"
-          />
-          <button type="button" className="btn btn-primary btn-sm" onClick={async () => {
-            if (!installUrl.trim()) return;
-            setInstallLoading(true);
-            try {
-              await onInstallFromUrl(installUrl.trim());
-              setInstallUrl("");
-            } finally { setInstallLoading(false); }
-          }} disabled={!installUrl.trim() || installLoading || readOnly}>
-            {installLoading ? t.installing : t.install}
-          </button>
-        </div>
-        <p className="install-drop-hint">{t.dragDropHint}</p>
       </div>
 
       {forumLoading && (
@@ -757,6 +827,10 @@ function DiscoverPage({
                 <input type="checkbox" checked={showFavoritesOnly} onChange={(e) => setShowFavoritesOnly(e.target.checked)} />
                 <span>{t.favorites}</span>
               </label>
+              <label className="forum-filter-favorites" aria-label="Show not installed only">
+                <input type="checkbox" checked={showNotInstalledOnly} onChange={(e) => { setShowNotInstalledOnly(e.target.checked); setCurrentPage(1); }} />
+                <span>{t.notInstalled}</span>
+              </label>
               <select className="select-sm" value={forumSort} onChange={(e) => setForumSort(e.target.value as ForumSort)} aria-label="Sort forum resources">
                 <option value="name">{t.sortByName}</option>
                 <option value="id">{t.sortByRecent}</option>
@@ -766,13 +840,13 @@ function DiscoverPage({
             </div>
 
             <div className="discover-pagination">
-              {Array.from({ length: totalPages }, (_, i) => i + 1).slice(0, 8).map((n) => (
+              {Array.from({ length: totalPagesEffective }, (_, i) => i + 1).slice(0, 8).map((n) => (
                 <button key={n} type="button" className={`pagination-btn ${n === currentPage ? "active" : ""}`} onClick={() => setCurrentPage(n)}>
                   {n}
                 </button>
               ))}
-              {totalPages > 8 && <span className="pagination-ellipsis">…</span>}
-              <button type="button" className="pagination-btn" onClick={() => setCurrentPage((p) => Math.min(p + 1, totalPages))} disabled={currentPage >= totalPages}>
+              {totalPagesEffective > 8 && <span className="pagination-ellipsis">…</span>}
+              <button type="button" className="pagination-btn" onClick={() => setCurrentPage((p) => Math.min(p + 1, totalPagesEffective))} disabled={currentPage >= totalPagesEffective}>
                 Next →
               </button>
             </div>
@@ -781,7 +855,7 @@ function DiscoverPage({
               {filteredForumPlugins.length === 0 ? (
                 <p className="empty-hint grid-full">{showFavoritesOnly ? t.noFavorite : t.noForumPlugin}</p>
               ) : (
-                paginatedPlugins.map((p) => (
+                paginatedPluginsEffective.map((p) => (
                   <article key={p.id} className="resource-card">
                     <div className="resource-card-header">
                       {p.icon_url ? (
@@ -845,8 +919,13 @@ function OptionsPage({
   onOpenLog,
   onExportFavorites,
   onImportFavorites,
+  onBackupAll,
+  onSaveProfile,
+  onApplyProfile,
   theme,
   onThemeChange,
+  lang,
+  onLangChange,
 }: {
   customPluginsPath: string;
   customObsPath: string;
@@ -867,8 +946,13 @@ function OptionsPage({
   onOpenLog: () => void;
   onExportFavorites: () => void;
   onImportFavorites: () => void;
-  theme: "dark" | "light";
-  onThemeChange: (v: "dark" | "light") => void;
+  onBackupAll: () => void;
+  onSaveProfile: () => void;
+  onApplyProfile: () => void;
+  theme: "dark" | "light" | "system";
+  onThemeChange: (v: "dark" | "light" | "system") => void;
+  lang: Lang;
+  onLangChange: (v: Lang) => void;
 }) {
   return (
     <section className="options-page card">
@@ -928,6 +1012,29 @@ function OptionsPage({
 
       <hr className="options-separator" />
 
+      <h2>{t.backupAll}</h2>
+      <p className="option-hint">{t.backupAllDesc}</p>
+      <div className="btn-row options-export-row">
+        <button type="button" className="btn btn-ghost" onClick={onBackupAll}>
+          {t.backupAll}
+        </button>
+      </div>
+
+      <hr className="options-separator" />
+
+      <h2>{t.profiles}</h2>
+      <p className="option-hint">{t.profilesDesc}</p>
+      <div className="btn-row options-export-row">
+        <button type="button" className="btn btn-ghost" onClick={onSaveProfile} disabled={readOnly}>
+          {t.saveProfile}
+        </button>
+        <button type="button" className="btn btn-ghost" onClick={onApplyProfile} disabled={readOnly}>
+          {t.applyProfile}
+        </button>
+      </div>
+
+      <hr className="options-separator" />
+
       <h2>{t.backupRestore}</h2>
       <p className="option-hint">{t.backupRestoreDesc}</p>
       <div className="btn-row options-export-row">
@@ -968,7 +1075,27 @@ function OptionsPage({
           >
             {t.lightMode}
           </button>
+          <button
+            type="button"
+            className={`btn ${theme === "system" ? "btn-primary" : "btn-ghost"}`}
+            onClick={() => onThemeChange("system")}
+          >
+            {t.systemTheme}
+          </button>
         </div>
+      </div>
+
+      <h2>{t.language}</h2>
+      <div className="form-group options-checkbox">
+        <select
+          value={lang}
+          onChange={(e) => onLangChange(e.target.value as Lang)}
+          className="select-sm"
+          aria-label="Language"
+        >
+          <option value="en">English</option>
+          <option value="fr">Français</option>
+        </select>
       </div>
 
       <hr className="options-separator" />
@@ -998,7 +1125,85 @@ function OptionsPage({
 }
 
 /**
- * Main App: routing (Home/Discover/Options), global state, Tauri IPC.
+ * Logs page: action history (detailed) and backend log file.
+ */
+function LogsPage({
+  actionLog,
+  onOpenLog,
+}: {
+  actionLog: ActionLog[];
+  onOpenLog: () => void;
+}) {
+  const [backendLog, setBackendLog] = useState<string | null>(null);
+  const [backendLogError, setBackendLogError] = useState<string | null>(null);
+
+  const loadBackendLog = useCallback(() => {
+    setBackendLogError(null);
+    invoke<string>("read_log_file")
+      .then(setBackendLog)
+      .catch((e) => setBackendLogError(String(e)));
+  }, []);
+
+  useEffect(() => {
+    loadBackendLog();
+  }, [loadBackendLog, actionLog]);
+
+  return (
+    <section className="logs-page-container">
+      <div className="card logs-page">
+        <div className="logs-page-header">
+          <h2>{t.actionHistory}</h2>
+          <button type="button" className="btn btn-ghost btn-sm" onClick={onOpenLog}>
+            {t.openLog}
+          </button>
+        </div>
+        {actionLog.length > 0 ? (
+          <ul className="logs-list logs-list-detailed">
+            {actionLog.map((a) => (
+              <li key={a.id} className="logs-item logs-item-detailed">
+                <span className="logs-datetime" title={a.date}>
+                  {a.date} {a.time}
+                </span>
+                <span className="logs-action">{a.action}</span>
+                {a.plugin && <span className="logs-plugin">{a.plugin}</span>}
+                {a.details && (
+                  <span className="logs-details" title={a.details}>
+                    {a.details.length > 80 ? `${a.details.slice(0, 80)}…` : a.details}
+                  </span>
+                )}
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="empty-hint">{t.noRecentAction}</p>
+        )}
+      </div>
+
+      <div className="card logs-backend">
+        <div className="logs-page-header">
+          <h2>{t.backendLog}</h2>
+          <div className="logs-backend-actions">
+            <button type="button" className="btn btn-ghost btn-sm" onClick={loadBackendLog}>
+              {t.refresh}
+            </button>
+            <button type="button" className="btn btn-ghost btn-sm" onClick={onOpenLog}>
+              {t.openLog}
+            </button>
+          </div>
+        </div>
+        {backendLogError && (
+          <p className="empty-hint">{backendLogError}</p>
+        )}
+        {backendLog && (
+          <pre className="logs-backend-content">{backendLog}</pre>
+        )}
+      </div>
+    </section>
+  );
+}
+
+/**
+ * Main App: routing (Home/Discover/Options/Logs), global state, Tauri IPC.
  */
 function App() {
   const [page, setPage] = useState<Page>("home");
@@ -1022,24 +1227,27 @@ function App() {
   const [readOnly, setReadOnly] = useState(false);
   const [configPath, setConfigPath] = useState<string | null>(null);
   const [compactMode, setCompactMode] = useState(false);
-  // Theme persisted in localStorage
-  const [theme, setTheme] = useState<"dark" | "light">(() => {
+  // Theme: dark | light | system (system uses prefers-color-scheme)
+  const [theme, setTheme] = useState<"dark" | "light" | "system">(() => {
     try {
       const s = localStorage.getItem("theme");
-      return s === "light" ? "light" : "dark";
+      if (s === "light" || s === "system") return s;
+      return "dark";
     } catch { return "dark"; }
   });
+  const [viewMode, setViewMode] = useState<ViewMode>("list");
+  const [lang, setLangState] = useState<Lang>(getLang);
   const [pluginUpdates, setPluginUpdates] = useState<PluginUpdateInfo[]>([]);
 
-  const addAction = useCallback((action: string, plugin?: string) => {
+  const addAction = useCallback((action: string, plugin?: string, details?: string) => {
+    const now = new Date();
     const entry: ActionLog = {
       id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
       action,
       plugin,
-      time: new Date().toLocaleTimeString("en-US", {
-        hour: "2-digit",
-        minute: "2-digit",
-      }),
+      details,
+      time: now.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", second: "2-digit" }),
+      date: now.toLocaleDateString(undefined, { day: "2-digit", month: "2-digit", year: "numeric" }),
     };
     setActionLog((prev) => [entry, ...prev].slice(0, MAX_ACTION_LOG));
   }, []);
@@ -1067,6 +1275,7 @@ function App() {
       setCustomObsPath(configData.custom_obs_install_path ?? "");
       setObsRunning(obsRun);
       setPathValid(valid);
+      addAction("Refresh", undefined, `${pluginsList.length} plugins loaded`);
     } catch (e) {
       setError(String(e));
       setPlugins([]);
@@ -1074,15 +1283,27 @@ function App() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [addAction]);
 
   useEffect(() => {
     loadData();
   }, [loadData]);
 
   useEffect(() => {
-    document.documentElement.setAttribute("data-theme", theme);
+    const resolved = theme === "system"
+      ? (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light")
+      : theme;
+    document.documentElement.setAttribute("data-theme", resolved);
     try { localStorage.setItem("theme", theme); } catch { /* ignore */ }
+  }, [theme]);
+  useEffect(() => {
+    if (theme !== "system") return;
+    const m = window.matchMedia("(prefers-color-scheme: dark)");
+    const handler = () => {
+      document.documentElement.setAttribute("data-theme", m.matches ? "dark" : "light");
+    };
+    m.addEventListener("change", handler);
+    return () => m.removeEventListener("change", handler);
   }, [theme]);
 
   const checkPluginUpdates = useCallback(async () => {
@@ -1146,7 +1367,7 @@ function App() {
       });
       await loadData();
       addAction("Options saved");
-      showToast("Options saved.");
+      showToast(t.optionsSaved);
     } catch (e) {
       setError(String(e));
     } finally {
@@ -1182,7 +1403,8 @@ function App() {
       const path = await save({ defaultPath: "obs-forum-favorites.json", filters: [{ name: "JSON", extensions: ["json"] }] });
       if (path) {
         await invoke("write_text_file", { path, contents: json });
-        showToast("Favorites exported.");
+        addAction("Export favorites");
+        showToast(t.favoritesExported);
       }
     } catch (e) {
       setError(String(e));
@@ -1198,7 +1420,8 @@ function App() {
         if (Array.isArray(data.favorites)) {
           await invoke("set_favorites", { ids: data.favorites });
           setConfigData((prev) => (prev ? { ...prev, forum_favorites: data.favorites } : null));
-          showToast("Favorites imported.");
+          addAction("Import favorites");
+        showToast(t.favoritesImported);
         }
       }
     } catch (e) {
@@ -1227,6 +1450,14 @@ function App() {
   const openPluginsFolder = useCallback(async () => {
     try {
       await invoke("open_plugins_folder");
+    } catch (e) {
+      setError(String(e));
+    }
+  }, []);
+
+  const openPluginFolder = useCallback(async (path: string) => {
+    try {
+      await invoke("open_plugins_folder", { folder_override: path });
     } catch (e) {
       setError(String(e));
     }
@@ -1265,8 +1496,8 @@ function App() {
     if (!plugin.enabled) return;
     try {
       await invoke("disable_plugin", { pluginPath: plugin.uninstall_path });
-      addAction("Disabled", plugin.name);
-      showToast(`"${plugin.name}" disabled.`);
+      addAction("Disabled", plugin.name, plugin.path);
+      showToast(t.disabledPlugin(plugin.name));
       await loadData();
     } catch (e) {
       setError(String(e));
@@ -1277,8 +1508,8 @@ function App() {
     if (plugin.enabled) return;
     try {
       await invoke("enable_plugin", { pluginPath: plugin.uninstall_path });
-      addAction("Enabled", plugin.name);
-      showToast(`"${plugin.name}" enabled.`);
+      addAction("Enabled", plugin.name, plugin.path);
+      showToast(t.enabledPlugin(plugin.name));
       await loadData();
     } catch (e) {
       setError(String(e));
@@ -1289,7 +1520,7 @@ function App() {
     let ok = false;
     try {
       ok = await ask(
-        `Uninstall "${plugin.name}"? A .zip backup will be created in the plugin folder.`,
+        t.confirmUninstall(plugin.name),
         { title: "Confirm", kind: "warning" }
       );
     } catch {
@@ -1300,14 +1531,14 @@ function App() {
       if (plugin.path === plugin.uninstall_path) {
         try {
           await invoke("backup_plugin_folder", { pluginPath: plugin.path });
-          addAction("Backup created", plugin.name);
+          addAction("Backup created", plugin.name, plugin.path);
         } catch {
           // continue without backup
         }
       }
       await invoke("uninstall_plugin", { uninstallPath: plugin.uninstall_path });
-      addAction("Uninstalled", plugin.name);
-      showToast(`"${plugin.name}" uninstalled.`);
+      addAction("Uninstalled", plugin.name, plugin.path);
+      showToast(t.uninstalledPlugin(plugin.name));
       await loadData();
     } catch (e) {
       setError(String(e));
@@ -1317,8 +1548,8 @@ function App() {
   async function installFromUrl(url: string) {
     try {
       const name = await invoke<string>("install_plugin_from_url", { url });
-      addAction("Installed", name);
-      showToast(`"${name}" installed.`);
+      addAction("Installed", name, "from URL");
+      showToast(t.installedPlugin(name));
       await loadData();
     } catch (e) {
       setError(String(e));
@@ -1327,14 +1558,34 @@ function App() {
 
   const installFromPath = useCallback(async (path: string) => {
     try {
-      const name = await invoke<string>("install_plugin_from_path", { path });
-      addAction("Installed", name);
-      showToast(`"${name}" installed.`);
+      const res = await invoke<{ name: string; updated: boolean }>("install_plugin_from_path", { path });
+      addAction(res.updated ? "Updated" : "Installed", res.name, path);
+      showToast(res.updated ? t.updatedPlugin(res.name) : t.installedPlugin(res.name));
       await loadData();
     } catch (e) {
       setError(String(e));
     }
   }, [addAction, showToast, loadData]);
+
+  const importFromFile = useCallback(async () => {
+    try {
+      const selected = await open({
+        multiple: true,
+        filters: [
+          { name: "Plugin (.zip, .dll)", extensions: ["zip", "dll"] },
+          { name: "All files", extensions: ["*"] },
+        ],
+      });
+      const paths = selected
+        ? (Array.isArray(selected) ? selected : [selected]).filter((p): p is string => typeof p === "string")
+        : [];
+      for (const p of paths) {
+        await installFromPath(p);
+      }
+    } catch (e) {
+      setError(String(e));
+    }
+  }, [installFromPath]);
 
   // Listen for drag-drop; cleanup on unmount (handle async listen promise)
   useEffect(() => {
@@ -1355,6 +1606,57 @@ function App() {
     };
   }, [readOnly, installFromPath]);
 
+  async function backupAllPlugins() {
+    try {
+      await invoke<string>("backup_all_plugins");
+      addAction("Backup all plugins");
+      showToast(t.backupAllDone);
+    } catch (e) {
+      setError(String(e));
+    }
+  }
+
+  async function saveProfile() {
+    try {
+      const enabled = plugins.filter((p) => p.enabled).map((p) => p.name);
+      const json = JSON.stringify({ name: "Profile", enabled, exportedAt: new Date().toISOString() }, null, 2);
+      const path = await save({ defaultPath: "obs-plugin-profile.json", filters: [{ name: "JSON", extensions: ["json"] }] });
+      if (path) {
+        await invoke("write_text_file", { path, contents: json });
+        addAction("Profile saved", undefined, "obs-plugin-profile.json");
+        showToast(t.profileSaved);
+      }
+    } catch (e) {
+      setError(String(e));
+    }
+  }
+
+  async function applyProfile() {
+    try {
+      const path = await open({ multiple: false, filters: [{ name: "JSON", extensions: ["json"] }] });
+      if (!path || typeof path !== "string") return;
+      const contents = await invoke<string>("read_text_file", { path });
+      const data = JSON.parse(contents);
+      const enabledNames: string[] = Array.isArray(data.enabled) ? data.enabled : [];
+      const enabledSet = new Set(enabledNames.map((n: string) => n.toLowerCase()));
+      for (const plugin of plugins) {
+        const shouldEnable = enabledSet.has(plugin.name.toLowerCase());
+        if (shouldEnable && !plugin.enabled) {
+          await invoke("enable_plugin", { pluginPath: plugin.uninstall_path });
+          addAction("Enabled", plugin.name, "profile");
+        } else if (!shouldEnable && plugin.enabled) {
+          await invoke("disable_plugin", { pluginPath: plugin.uninstall_path });
+          addAction("Disabled", plugin.name, "profile");
+        }
+      }
+      addAction("Profile applied", undefined, `${enabledNames.length} enabled`);
+        showToast(t.profileApplied);
+      await loadData();
+    } catch (e) {
+      setError(String(e));
+    }
+  }
+
   async function exportConfig() {
     try {
       const json = await invoke<string>("export_config_json");
@@ -1365,7 +1667,7 @@ function App() {
       if (path) {
         await invoke("write_text_file", { path, contents: json });
         addAction("Config exported");
-        showToast("Configuration exported.");
+        showToast(t.configExported);
       }
     } catch (e) {
       setError(String(e));
@@ -1392,8 +1694,8 @@ function App() {
             },
           });
         }
-        addAction("Config imported");
-        showToast("Configuration imported.");
+        addAction("Config imported", undefined, "Backup");
+        showToast(t.configImported);
         await loadData();
       }
     } catch (e) {
@@ -1410,7 +1712,8 @@ function App() {
       });
       if (path) {
         await invoke("write_text_file", { path, contents: json });
-        showToast("List exported (JSON).");
+        addAction("Export list", undefined, "JSON");
+        showToast(t.listExported);
       }
     } catch (e) {
       setError(String(e));
@@ -1426,7 +1729,8 @@ function App() {
       });
       if (path) {
         await invoke("write_text_file", { path, contents: csv });
-        showToast("List exported (CSV).");
+        addAction("Export list", undefined, "CSV");
+        showToast(t.listExportedCsv);
       }
     } catch (e) {
       setError(String(e));
@@ -1436,7 +1740,7 @@ function App() {
   const homeSearchRef = useRef<HTMLInputElement>(null);
   const discoverSearchRef = useRef<HTMLInputElement>(null);
 
-  // Global keyboard shortcuts: Esc (clear), Ctrl+R (refresh), Ctrl+F (focus search), etc.
+  // Global keyboard shortcuts
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
@@ -1459,23 +1763,71 @@ function App() {
         e.preventDefault();
         loadData();
       }
-      if (e.ctrlKey && e.key === "o") {
+      if (e.ctrlKey && e.key === "o" && !e.shiftKey) {
         e.preventDefault();
         openPluginsFolder();
+      }
+      if (e.ctrlKey && e.key === "1") {
+        e.preventDefault();
+        setPage("home");
+      }
+      if (e.ctrlKey && e.key === "2") {
+        e.preventDefault();
+        setPage("discover");
+      }
+      if (e.ctrlKey && e.key === "3") {
+        e.preventDefault();
+        setPage("options");
+      }
+      if (e.ctrlKey && e.key === "4") {
+        e.preventDefault();
+        setPage("logs");
+      }
+      if (e.ctrlKey && e.key === "d") {
+        e.preventDefault();
+        setPage("discover");
+      }
+      if (e.ctrlKey && e.shiftKey && e.key === "O") {
+        e.preventDefault();
+        setPage("options");
       }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   }, [loadData, page, openPluginsFolder]);
 
+  const contentRef = useRef<HTMLElement>(null);
+  const [showScrollTop, setShowScrollTop] = useState(false);
+  useEffect(() => {
+    const onScroll = () => {
+      const y = window.scrollY ?? document.documentElement.scrollTop ?? 0;
+      setShowScrollTop(y > 200);
+    };
+    window.addEventListener("scroll", onScroll);
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
+
+  const scrollToTop = () => {
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
   return (
-    <main className="app">
+    <main className="app" ref={contentRef}>
       <header className="header">
         <img src={logo} alt="LamaWorlds" className="header-logo" />
         <div className="header-text">
           <h1>LamaWorlds OBS Plugin Manager</h1>
           <p className="subtitle">{t.subtitle}</p>
         </div>
+        <button
+          type="button"
+          className="header-options-btn"
+          onClick={() => setPage("options")}
+          title={t.options}
+          aria-label={t.options}
+        >
+          ⚙
+        </button>
       </header>
 
       <nav className="nav-tabs" role="navigation" aria-label="Main navigation">
@@ -1484,7 +1836,7 @@ function App() {
           className={`nav-tab ${page === "home" ? "active" : ""}`}
           onClick={() => setPage("home")}
           aria-current={page === "home" ? "page" : undefined}
-          aria-label="Home - installed plugins"
+          aria-label="Home"
         >
           {t.home}
         </button>
@@ -1494,32 +1846,36 @@ function App() {
           onClick={() => setPage("discover")}
           title={t.shortcuts}
           aria-current={page === "discover" ? "page" : undefined}
-          aria-label="Discover - forum plugins"
+          aria-label="Discover"
         >
           {t.discover}
         </button>
         <button
           type="button"
-          className={`nav-tab ${page === "options" ? "active" : ""}`}
-          onClick={() => setPage("options")}
-          aria-current={page === "options" ? "page" : undefined}
-          aria-label="Options - settings"
+          className={`nav-tab ${page === "logs" ? "active" : ""}`}
+          onClick={() => setPage("logs")}
+          aria-current={page === "logs" ? "page" : undefined}
+          aria-label="Logs"
         >
-          {t.options}
+          {t.logs}
         </button>
       </nav>
 
       {pluginUpdates.length > 0 && (
-        <div className="alert alert-warning">
+        <div className="alert alert-warning plugin-updates-alert">
           <strong>{t.updatesAvailable}:</strong>{" "}
-          {pluginUpdates.map((u) => u.plugin_name).join(", ")}{" "}
-          <a
-            href="#"
-            onClick={(e) => { e.preventDefault(); setPage("discover"); }}
-            className="link"
-          >
-            View in Discover
-          </a>
+          {pluginUpdates.map((u) => (
+            <span key={u.plugin_name} className="plugin-update-item">
+              <span>{u.plugin_name}</span>
+              {u.installed_version && <span className="version-diff">v{u.installed_version} → v{u.available_version ?? "?"}</span>}
+              <button type="button" className="btn btn-sm btn-outline" onClick={() => openPluginUrl(u.forum_url)}>
+                {t.viewOnForum}
+              </button>
+              <button type="button" className="btn btn-sm btn-primary" onClick={() => setPage("discover")}>
+                {t.viewInDiscover}
+              </button>
+            </span>
+          ))}
         </div>
       )}
       {error && (
@@ -1537,24 +1893,30 @@ function App() {
             searchQuery={searchQuery}
             sortBy={sortBy}
             statusFilter={statusFilter}
+            viewMode={viewMode}
             searchInputRef={homeSearchRef}
             onSearchChange={setSearchQuery}
             onSortChange={setSortBy}
             onStatusFilterChange={setStatusFilter}
+            onViewModeChange={setViewMode}
             onRefresh={loadData}
             onOpenPluginsFolder={openPluginsFolder}
             onExportPluginsJson={exportPluginsJson}
             onExportPluginsCsv={exportPluginsCsv}
+            onInstallFromUrl={installFromUrl}
+            onImportFromFile={importFromFile}
             onUninstall={uninstallPlugin}
             onDisable={disablePlugin}
             onEnable={enablePlugin}
+            onOpenPluginUrl={openPluginUrl}
+            onOpenPluginFolder={openPluginFolder}
             obsRunning={obsRunning}
             pathValid={pathValid}
             readOnly={readOnly}
             compactMode={compactMode}
             onCompactModeChange={setCompactMode}
-            actionLog={actionLog}
             toast={toast}
+            pluginUpdates={pluginUpdates}
           />
         )}
         {page === "discover" && (
@@ -1592,11 +1954,31 @@ function App() {
             onOpenLog={openLogFolder}
             onExportFavorites={exportFavoritesList}
             onImportFavorites={importFavoritesList}
+            onBackupAll={backupAllPlugins}
+            onSaveProfile={saveProfile}
+            onApplyProfile={applyProfile}
             theme={theme}
             onThemeChange={setTheme}
+            lang={lang}
+            onLangChange={(l) => { setLang(l); setLangState(l); }}
           />
         )}
+        {page === "logs" && (
+          <LogsPage actionLog={actionLog} onOpenLog={openLogFolder} />
+        )}
       </div>
+
+      {showScrollTop && (
+        <button
+          type="button"
+          className="scroll-top-btn"
+          onClick={scrollToTop}
+          aria-label="Scroll to top"
+          title="Scroll to top"
+        >
+          ↑
+        </button>
+      )}
     </main>
   );
 }
