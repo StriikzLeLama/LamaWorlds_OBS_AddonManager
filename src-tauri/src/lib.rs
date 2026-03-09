@@ -697,6 +697,21 @@ fn read_log_file() -> Result<String, String> {
 }
 
 #[tauri::command]
+fn open_downloads_folder() -> Result<(), String> {
+    let downloads = std::env::var("USERPROFILE")
+        .or_else(|_| std::env::var("HOME"))
+        .map(|h| format!("{}/Downloads", h.trim_end_matches('/')))
+        .map_err(|_| "Could not find Downloads folder")?;
+    let path = Path::new(&downloads);
+    if path.exists() {
+        open::that(&downloads).map_err(|e| e.to_string())
+    } else {
+        open::that(std::env::var("USERPROFILE").or_else(|_| std::env::var("HOME")).map_err(|_| "No home dir")?)
+            .map_err(|e| e.to_string())
+    }
+}
+
+#[tauri::command]
 fn test_forum_connection() -> Result<serde_json::Value, String> {
     match fetch_forum_plugins_impl("plugins", true, 1) {
         Ok(plugins) => Ok(serde_json::json!({ "count": plugins.len(), "ok": true })),
@@ -1604,6 +1619,7 @@ pub fn run() {
             get_config_dir,
             open_log_folder,
             read_log_file,
+            open_downloads_folder,
             test_forum_connection
         ])
         .run(tauri::generate_context!())

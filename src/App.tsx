@@ -119,6 +119,11 @@ function HomePage({
   onExportPluginsCsv,
   onInstallFromUrl,
   onImportFromFile,
+  onInstallFromPastePath,
+  onOpenDownloads,
+  importLoading,
+  importHistory,
+  onReimportFromHistory,
   onUninstall,
   onDisable,
   onEnable,
@@ -150,6 +155,11 @@ function HomePage({
   onExportPluginsCsv: () => void;
   onInstallFromUrl: (url: string) => void;
   onImportFromFile: () => void;
+  onInstallFromPastePath: (path: string) => void;
+  onOpenDownloads: () => void;
+  importLoading: boolean;
+  importHistory: string[];
+  onReimportFromHistory: (path: string) => void;
   onUninstall: (plugin: ObsPluginInfo) => void;
   onDisable: (plugin: ObsPluginInfo) => void;
   onEnable: (plugin: ObsPluginInfo) => void;
@@ -165,6 +175,7 @@ function HomePage({
 }) {
   const [installUrl, setInstallUrl] = useState("");
   const [installLoading, setInstallLoading] = useState(false);
+  const [pastePath, setPastePath] = useState("");
 
   const handleInstallFromUrl = useCallback(async () => {
     if (!installUrl.trim()) return;
@@ -232,26 +243,78 @@ function HomePage({
             {installLoading ? t.installing : t.install}
           </button>
         </div>
-        <div className="install-import-row">
+        <div className="install-paste-row">
+          <input
+            type="text"
+            placeholder={t.pastePathHint}
+            value={pastePath}
+            onChange={(e) => setPastePath(e.target.value)}
+            className="input input-sm"
+            onKeyDown={(e) => { if (e.key === "Enter") { onInstallFromPastePath(pastePath); setPastePath(""); } }}
+          />
           <button
             type="button"
-            className="btn btn-outline"
-            onClick={onImportFromFile}
-            disabled={readOnly}
-            title={t.importFromFileDesc}
+            className="btn btn-outline btn-sm"
+            onClick={() => { onInstallFromPastePath(pastePath); setPastePath(""); }}
+            disabled={!pastePath.trim() || readOnly || importLoading}
           >
-            {t.importFromFile}
+            {t.install}
           </button>
         </div>
         <div
-          className={`drop-zone ${readOnly ? "drop-zone-disabled" : ""}`}
+          role="button"
+          tabIndex={0}
+          className={`drop-zone ${readOnly ? "drop-zone-disabled" : ""} ${importLoading ? "drop-zone-loading" : ""}`}
+          onClick={() => !readOnly && !importLoading && onImportFromFile()}
+          onKeyDown={(e) => e.key === "Enter" && !readOnly && !importLoading && onImportFromFile()}
+          onContextMenu={(e) => {
+            e.preventDefault();
+            if (readOnly || importLoading) return;
+            const menu = document.createElement("div");
+            menu.className = "context-menu";
+            menu.style.cssText = `left:${e.clientX}px;top:${e.clientY}px`;
+            const btn = document.createElement("button");
+            btn.textContent = t.importFromFile;
+            btn.onclick = () => { onImportFromFile(); close(); };
+            menu.appendChild(btn);
+            const close = () => { menu.remove(); document.removeEventListener("click", close); };
+            document.body.appendChild(menu);
+            requestAnimationFrame(() => document.addEventListener("click", close));
+          }}
           onDragOver={(e) => { e.preventDefault(); e.currentTarget.classList.add("drop-zone-active"); }}
           onDragLeave={(e) => { e.preventDefault(); e.currentTarget.classList.remove("drop-zone-active"); }}
           title={t.dropZoneHint}
         >
           <span className="drop-zone-icon">📦</span>
-          <span>{t.dropZoneHint}</span>
+          <span>{importLoading ? t.installing : t.dropZoneHint}</span>
         </div>
+        <div className="import-extra-row">
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            onClick={onOpenDownloads}
+            title={t.openDownloads}
+          >
+            {t.openDownloads}
+          </button>
+        </div>
+        {importHistory.length > 0 && (
+          <div className="import-history">
+            <span className="import-history-label">{t.recentImports}:</span>
+            {importHistory.slice(0, 5).map((p: string) => (
+              <button
+                key={p}
+                type="button"
+                className="btn btn-ghost btn-xs import-history-item"
+                onClick={() => onReimportFromHistory(p)}
+                disabled={readOnly || importLoading}
+                title={p}
+              >
+                {p.split(/[/\\]/).pop() || p}
+              </button>
+            ))}
+          </div>
+        )}
       </section>
       {(obsRunning || !pathValid) && (
         <div className="alerts">
@@ -1238,6 +1301,23 @@ function App() {
   const [viewMode, setViewMode] = useState<ViewMode>("list");
   const [lang, setLangState] = useState<Lang>(getLang);
   const [pluginUpdates, setPluginUpdates] = useState<PluginUpdateInfo[]>([]);
+  const IMPORT_HISTORY_KEY = "obs-plugin-manager-import-history";
+  const MAX_IMPORT_HISTORY = 5;
+  const [importHistory, setImportHistory] = useState<string[]>(() => {
+    try {
+      const s = localStorage.getItem(IMPORT_HISTORY_KEY);
+      return s ? JSON.parse(s) : [];
+    } catch { return []; }
+  });
+  const [importLoading, setImportLoading] = useState(false);
+
+  const addToImportHistory = useCallback((path: string) => {
+    setImportHistory((prev) => {
+      const next = [path, ...prev.filter((p) => p !== path)].slice(0, MAX_IMPORT_HISTORY);
+      try { localStorage.setItem(IMPORT_HISTORY_KEY, JSON.stringify(next)); } catch {}
+      return next;
+    });
+  }, []);
 
   const addAction = useCallback((action: string, plugin?: string, details?: string) => {
     const now = new Date();
@@ -1568,6 +1648,7 @@ function App() {
   }, [addAction, showToast, loadData]);
 
   const importFromFile = useCallback(async () => {
+    setImportLoading(true);
     try {
       const selected = await open({
         multiple: true,
@@ -1581,9 +1662,45 @@ function App() {
         : [];
       for (const p of paths) {
         await installFromPath(p);
+        addToImportHistory(p);
       }
     } catch (e) {
       setError(String(e));
+    } finally {
+      setImportLoading(false);
+    }
+  }, [installFromPath, addToImportHistory]);
+
+  const installFromPastePath = useCallback(async (pathInput: string) => {
+    const p = pathInput.trim().replace(/^["']|["']$/g, "");
+    if (!p) return;
+    setImportLoading(true);
+    try {
+      await installFromPath(p);
+      addToImportHistory(p);
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setImportLoading(false);
+    }
+  }, [installFromPath, addToImportHistory]);
+
+  const openDownloads = useCallback(async () => {
+    try {
+      await invoke("open_downloads_folder");
+    } catch (e) {
+      setError(String(e));
+    }
+  }, []);
+
+  const reimportFromHistory = useCallback(async (path: string) => {
+    setImportLoading(true);
+    try {
+      await installFromPath(path);
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setImportLoading(false);
     }
   }, [installFromPath]);
 
@@ -1787,6 +1904,11 @@ function App() {
         e.preventDefault();
         setPage("discover");
       }
+      if (e.ctrlKey && e.key === "i") {
+        e.preventDefault();
+        setPage("home");
+        importFromFile();
+      }
       if (e.ctrlKey && e.shiftKey && e.key === "O") {
         e.preventDefault();
         setPage("options");
@@ -1794,7 +1916,7 @@ function App() {
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [loadData, page, openPluginsFolder]);
+  }, [loadData, page, openPluginsFolder, importFromFile]);
 
   const contentRef = useRef<HTMLElement>(null);
   const [showScrollTop, setShowScrollTop] = useState(false);
@@ -1905,6 +2027,11 @@ function App() {
             onExportPluginsCsv={exportPluginsCsv}
             onInstallFromUrl={installFromUrl}
             onImportFromFile={importFromFile}
+            onInstallFromPastePath={installFromPastePath}
+            onOpenDownloads={openDownloads}
+            importLoading={importLoading}
+            importHistory={importHistory}
+            onReimportFromHistory={reimportFromHistory}
             onUninstall={uninstallPlugin}
             onDisable={disablePlugin}
             onEnable={enablePlugin}
